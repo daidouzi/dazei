@@ -1,0 +1,201 @@
+<apex:page controller="AttachmentUploadController" id="page"   docType="html-5.0" showHeader="false" >
+<!--
+<apex:page standardController="Account" extensions="AttachmentUploadController" id="page" docType="html-5.0" showHeader="false" >
+ -->
+
+<apex:stylesheet value="{!URLFOR($Resource.CameraResource, 'js/jquery.mobile-1.3.0.min.css')}"/>
+
+<apex:includeScript value="{!URLFOR($Resource.CameraResource, 'js/jquery.min.js')}" />
+<apex:includeScript value="{!URLFOR($Resource.CameraResource, 'js/jquery.blockUI.js')}" />
+<apex:includeScript value="{!URLFOR($Resource.CameraResource, 'js/jquery.mobile-1.3.0.min.js')}"/>
+
+<style>
+
+</style>
+
+<script type="text/javascript">
+
+    var maxStringSize = 6000000;    //Maximum String size is 6,000,000 characters
+    var maxFileSize = 4350000;      //After Base64 Encoding, this is the max file size
+    var chunkSize = 950000;         //Maximum Javascript Remoting message size is 1,000,000 characters
+    var attachment;
+    var attachmentName;
+    var fileSize;
+    var positionIndex;
+    var doneUploading;
+
+/**
+ * ファイル読み込み処理
+ */
+function uploadFile() {
+
+    //ファイル取得
+    var file = document.getElementById('attachmentFile').files[0];
+
+    //console.log(file);
+    //ファイル選択されている場合
+    if(file != undefined) {
+
+        //最大値を超えていない場合
+        if(file.size <= maxFileSize) {
+
+            attachmentName = file.name;
+
+            var fileReader = new FileReader();
+
+            //イベント
+            fileReader.onloadend = function(e) {
+
+                //送信前にBase64にエンコードする
+                attachment = window.btoa(this.result);  //Base 64 encode the file before sending it
+
+                positionIndex=0;
+
+                fileSize = attachment.length;
+
+                //console.log("Total Attachment Length: " + fileSize);
+
+                doneUploading = false;
+
+                if(fileSize < maxStringSize) {
+
+                    uploadAttachment(null);
+
+                } else {
+                    alert("Base 64にエンコードしたファイルが大きすぎます。\n  最大は " + maxStringSize + " です。￥ 選択したファイルのサイズは " + fileSize + "です。");
+                }
+             
+            }
+
+            //エラーイベント
+            fileReader.onerror = function(e) {
+
+                alert("ファイルの読み込み中にエラーが発生しました。もう一度やり直してください。");
+            }
+
+            //画像の読み込みが中断イベント
+            fileReader.onabort = function(e) {
+                alert("ファイルの読み込み中にエラーが発生しました。もう一度やり直してください。");
+            }
+
+            //バイナリデータとして読み込む
+            fileReader.readAsBinaryString(file); 
+     
+        } else {
+            alert("ファイルサイズが大きすぎます。\nファイルサイズは 4.3 MB 以下にして操作を行ってください。");
+        }
+    } else {
+        alert("ファイルを選択してください。");
+    }
+}     
+//Method to send a file to be attached to the Account bound to the page by the standardController
+//Sends parameters: Account Id, Attachment (body), Attachment Name, and the Id of the Attachment if it exists to the controller  
+function uploadAttachment(fileId) {
+
+    var attachmentBody = "";
+
+    if(fileSize <= positionIndex + chunkSize) {
+
+        attachmentBody = attachment.substring(positionIndex);
+        doneUploading = true;
+
+    } else {
+
+        attachmentBody = attachment.substring(positionIndex, positionIndex + chunkSize);
+    }
+
+    //console.log("Uploading " + attachmentBody.length + " chars of " + fileSize);
+    //コメント取得
+    var comment = document.getElementById('comment').value;
+
+    //ロード開始
+    $.blockUI({ message:'<h1><img src="/img/loading32.gif" /> Updating...</h1>' });
+
+    //Apexの処理呼び出し
+    AttachmentUploadController.doUploadAttachment(
+        '{!Account.Id}'
+        ,attachmentBody
+        ,attachmentName
+        ,fileId
+        ,comment
+        ,function(result, event) {
+
+            //console.log("---doUploadAttachment-result--"+result);
+
+            if(event.type === 'exception') {
+                //console.log("exception");
+                //console.log(event);
+                alert("エラーが発生しました。\n"+event);
+                //ロードストップ
+                $.unblockUI();
+
+            } else if(event.status) {
+
+                if(result.substring(0,3) == '00P') {
+
+                    if(doneUploading == true) {
+                        alert("添付ファイルに登録しました。");
+                        //リフレッシュ
+                        window.location.reload();
+                    } else {
+                        positionIndex += chunkSize;
+                        uploadAttachment(result);
+                    }
+                }
+            } else {
+                //console.log(event.message);
+                alert("失敗しました。\n再度操作を行ってください。\n"+event.message);
+                //ロードストップ
+                $.unblockUI();
+            }
+        }
+        ,{
+            buffer: true
+            ,escape: true
+            ,timeout: 120000
+        }
+    );
+}
+
+
+$(document).ready(function() {
+    $('img').error(function() {
+        //ファイルが存在しない画像はimgタグ自体を削除
+        //$(this).remove();
+        //画像を変更する
+        $(this).attr("src","{!URLFOR($Resource.CameraResource, 'standard/file_60.png')}");
+    });
+});
+
+</script>
+
+
+<div data-role="header" data-theme="b">
+    <h1>{!Account.Name}</h1>
+</div>
+
+<div data-role="content">
+    <input type="file" id="attachmentFile" accept="image/*;capture=camera"/>
+</div>
+<div data-role="fieldcontain">
+    <label for="comment">メモ</label>
+    <textarea id="comment"></textarea>
+</div>
+<div data-role="content">
+    <button onclick="uploadFile()" >アップロード開始</button>
+</div>
+
+<h3>最新5件まで表示</h3>
+<ul data-role="listview" class="ui-listview">
+    <apex:repeat value="{!account.NotesAndAttachments}" var="attachmentObj" id="theRepeat" rows="5" >
+        <li class="ui-li ui-li-static ui-body-c ui-li-has-thumb">
+            <apex:image id="theImage" value="/servlet/servlet.FileDownload?file={!attachmentObj.id}" styleClass="ui-li-thumb center-image" />
+            <h3 class="ui-li-heading">{!attachmentObj.title}</h3>
+            <p class="ui-li-desc">種別：{!IF(attachmentObj.IsNote, "メモ","添付")}</p>
+            <p class="ui-li-desc">最終更新：<apex:outputField value="{!attachmentObj.lastmodifieddate}" /></p>
+        </li>
+    </apex:repeat>
+</ul>
+<p><a href="javascript:sforce.one.navigateToRelatedList('RelatedNoteList', '{!account.id}');">メモ &amp; 添付ファイル へ移動</a></p>
+
+</apex:page>
