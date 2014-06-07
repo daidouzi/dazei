@@ -4,6 +4,7 @@ public with sharing class AttachmentUploadController {
     //public List<Attachment> attachmentList{get;set;}
 
 /*
+//test
     public AttachmentUploadController (ApexPages.StandardController c) {
 
         this.attachmentList = getAttachmentList((String)c.getRecord().get('id'));
